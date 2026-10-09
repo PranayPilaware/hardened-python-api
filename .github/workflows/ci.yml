@@ -1,0 +1,27 @@
+name: API CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test live API endpoints
+        run: python -m unittest discover -s tests -v
+      - name: Build Docker image
+        run: docker build --pull -t hardened-python-api:test .
+      - name: Container smoke test
+        run: |
+          docker run --detach --name portfolio-api --read-only --cap-drop=ALL --security-opt no-new-privileges -p 8000:8000 hardened-python-api:test
+          trap 'docker logs portfolio-api; docker rm -f portfolio-api' EXIT
+          for i in $(seq 1 15); do
+            if curl --fail --silent http://127.0.0.1:8000/healthz | grep -q '"status":"ok"'; then exit 0; fi
+            sleep 1
+          done
+          exit 1
